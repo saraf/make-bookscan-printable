@@ -10,6 +10,9 @@ GS_THREADS_DEFAULT=$(nproc)
 # Path to ImageMagick 7 on Windows; usually just "convert.exe"
 CONVERT_EXE="convert.exe"
 
+# How many cleanup jobs (convert.exe) to run in parallel
+CLEAN_JOBS_DEFAULT=6
+
 ########################################
 # Usage / arguments
 ########################################
@@ -220,20 +223,44 @@ echo
 ########################################
 # Step 2 — Cleanup each PNG with chosen level
 ########################################
-echo "Step 2/3: Cleaning pages with cleanup level $CLEANUP_LEVEL..."
+echo "Step 2/3: Cleaning pages with cleanup level $CLEANUP_LEVEL (up to $CLEAN_JOBS_DEFAULT parallel jobs)..."
 
+# Collect files into an array so we can show nice progress
+mapfile -t CLEAN_FILES < <(ls "$PNG_DIR"/pg-*.png | sort)
+TOTAL=${#CLEAN_FILES[@]}
+if [ "$TOTAL" -eq 0 ]; then
+  echo "No PNGs found in $PNG_DIR. Aborting." >&2
+  exit 1
+fi
+
+running=0
 index=0
-for in_file in "$PNG_DIR"/pg-*.png; do
+
+for in_file in "${CLEAN_FILES[@]}"; do
   index=$((index + 1))
   base=$(basename "$in_file")
   out_file="$CLEAN_DIR/$base"
 
-  echo "  [$index/$PNG_COUNT] $base"
-  apply_cleanup_level "$CLEANUP_LEVEL" "$in_file" "$out_file"
+  echo "  [$index/$TOTAL] $base"
+
+  # Run cleanup in the background
+  apply_cleanup_level "$CLEANUP_LEVEL" "$in_file" "$out_file" &
+
+  running=$((running + 1))
+  if (( running >= CLEAN_JOBS_DEFAULT )); then
+    # Wait until at least one background job finishes
+    wait -n
+    running=$((running - 1))
+  fi
 done
+
+# Wait for any remaining jobs
+wait
 
 echo "Cleanup complete."
 echo
+
+
 
 ########################################
 # Step 3 — Combine cleaned PNGs into PDF (convert.exe)
