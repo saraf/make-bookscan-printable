@@ -8,7 +8,7 @@ DPI_DEFAULT=300
 GS_THREADS_DEFAULT=$(nproc)
 
 # Path to ImageMagick 7 on Windows; usually just "convert.exe"
-CONVERT_EXE="convert.exe"
+CONVERT_EXE="magick.exe"
 
 # How many cleanup jobs (convert.exe) to run in parallel
 CLEAN_JOBS_DEFAULT=6
