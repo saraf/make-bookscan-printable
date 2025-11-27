@@ -52,6 +52,8 @@ fi
 PNG_DIR="${BASENAME}_png"
 CLEAN_DIR="${BASENAME}_clean"
 
+SCRIPT_START=$(date +%s)
+
 ########################################
 # Tool checks
 ########################################
@@ -160,6 +162,8 @@ if [ "$TRIAL_PAGE" -gt 0 ]; then
 
   RAW_PNG="trial_page_${TRIAL_PAGE}_raw.png"
 
+  TRIAL_START=$(date +%s)
+
   echo "Step 1: Rasterizing page $TRIAL_PAGE → $RAW_PNG (pnggray @ ${DPI}dpi)..."
   gs -dNOPAUSE -dBATCH \
      -sDEVICE=pnggray -r"$DPI" \
@@ -172,12 +176,21 @@ if [ "$TRIAL_PAGE" -gt 0 ]; then
     exit 1
   fi
 
+  T_RAST_END=$(date +%s)
+  echo "  Rasterization took $((T_RAST_END - TRIAL_START))s"
+  echo
+
   echo "Step 2: Generating cleanup variants 0.png .. 10.png"
   for level in $(seq 0 10); do
     out="${level}.png"
     echo "  Level $level → $out"
     apply_cleanup_level "$level" "$RAW_PNG" "$out"
   done
+
+  T_CLEAN_END=$(date +%s)
+  echo "  Cleanup variants took $((T_CLEAN_END - T_RAST_END))s"
+  echo
+  echo "Total trial time: $((T_CLEAN_END - TRIAL_START))s"
 
   echo
   echo "Done. Inspect 0.png .. 10.png and pick your preferred cleanup level."
@@ -205,6 +218,7 @@ mkdir -p "$PNG_DIR" "$CLEAN_DIR"
 # Step 1 — PDF -> PNG (Ghostscript)
 ########################################
 echo "Step 1/3: Rasterizing PDF to pnggray @ ${DPI}dpi..."
+STEP1_START=$(date +%s)
 
 gs -dNOPAUSE -dBATCH \
    -sDEVICE=pnggray -r"$DPI" \
@@ -212,18 +226,23 @@ gs -dNOPAUSE -dBATCH \
    -sOutputFile="${PNG_DIR}/pg-%04d.png" \
    "$INPUT_PDF"
 
+STEP1_END=$(date +%s)
+
 PNG_COUNT=$(ls "$PNG_DIR"/pg-*.png 2>/dev/null | wc -l || true)
 if [ "$PNG_COUNT" -eq 0 ]; then
   echo "No PNG pages were generated. Aborting." >&2
   exit 1
 fi
 echo "Generated $PNG_COUNT PNG pages."
+echo "Step 1 time: $((STEP1_END - STEP1_START))s"
 echo
 
 ########################################
 # Step 2 — Cleanup each PNG with chosen level
 ########################################
 echo "Step 2/3: Cleaning pages with cleanup level $CLEANUP_LEVEL (up to $CLEAN_JOBS_DEFAULT parallel jobs)..."
+
+STEP2_START=$(date +%s)
 
 # Collect files into an array so we can show nice progress
 mapfile -t CLEAN_FILES < <(ls "$PNG_DIR"/pg-*.png | sort)
@@ -257,7 +276,9 @@ done
 # Wait for any remaining jobs
 wait
 
+STEP2_END=$(date +%s)
 echo "Cleanup complete."
+echo "Step 2 time: $((STEP2_END - STEP2_START))s"
 echo
 
 
@@ -266,12 +287,18 @@ echo
 # Step 3 — Combine cleaned PNGs into PDF (convert.exe)
 ########################################
 echo "Step 3/3: Combining cleaned pages into PDF with ImageMagick 7..."
+STEP3_START=$(date +%s)
 
 # We rely on Windows IM7 to build the PDF
 # (WSL will pass /mnt/... paths through)
 "$CONVERT_EXE" "$CLEAN_DIR"/pg-*.png "$OUTPUT_PDF"
 
+STEP3_END=$(date +%s)
+
 echo
 echo "Created print-ready PDF: $OUTPUT_PDF"
+echo "Step 3 time: $((STEP3_END - STEP3_START))s"
+SCRIPT_END=$(date +%s)
+echo "Total time: $((SCRIPT_END - SCRIPT_START))s"
 echo "=== DONE ==="
 
